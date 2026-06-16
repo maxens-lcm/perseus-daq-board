@@ -1,0 +1,17 @@
+.DS_Store
+*.tmp
+*.bak
+*~
+
+# Firmware build outputs
+**/Debug/
+**/Release/
+**/build/
+**/*.elf
+**/*.map
+**/*.list
+**/*.o
+**/*.d
+**/*.su
+**/*.cyclo
+**/*.bin
