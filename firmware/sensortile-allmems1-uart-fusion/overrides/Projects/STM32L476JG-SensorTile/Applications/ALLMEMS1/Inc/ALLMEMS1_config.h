@@ -32,7 +32,7 @@
 
 /* Optional UART output for PERSEUS DAQ board.
    Keep disabled by default to preserve the original ALLMEMS1 behavior. */
-/* #define ALLMEMS1_ENABLE_UART_FUSION_STREAM */
+#define ALLMEMS1_ENABLE_UART_FUSION_STREAM
 
 /* For enabling MotionCP algorithm */
 #ifndef ALLMEMS1_MOTIONFA

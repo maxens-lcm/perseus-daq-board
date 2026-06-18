@@ -84,6 +84,7 @@ void UART_FusionStream_MspInit(UART_HandleTypeDef *huart)
     UART_FUSION_STREAM_TX_GPIO_CLK_ENABLE();
     UART_FUSION_STREAM_RX_GPIO_CLK_ENABLE();
 
+    /* Configure TX pin (PC12) */
     GPIO_InitStruct.Pin = UART_FUSION_STREAM_TX_PIN;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -91,15 +92,26 @@ void UART_FusionStream_MspInit(UART_HandleTypeDef *huart)
     GPIO_InitStruct.Alternate = UART_FUSION_STREAM_TX_GPIO_AF;
     HAL_GPIO_Init(UART_FUSION_STREAM_TX_GPIO_PORT, &GPIO_InitStruct);
 
+    /* Configure RX pin (PD2) */
     GPIO_InitStruct.Pin = UART_FUSION_STREAM_RX_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     GPIO_InitStruct.Alternate = UART_FUSION_STREAM_RX_GPIO_AF;
     HAL_GPIO_Init(UART_FUSION_STREAM_RX_GPIO_PORT, &GPIO_InitStruct);
+
+    /* UART5 interrupt Init */
+    HAL_NVIC_SetPriority(UART5_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(UART5_IRQn);
   }
 }
 
 void UART_FusionStream_MspDeInit(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == UART_FUSION_STREAM_UART_INSTANCE) {
+    /* UART5 interrupt DeInit */
+    HAL_NVIC_DisableIRQ(UART5_IRQn);
+
     HAL_GPIO_DeInit(UART_FUSION_STREAM_TX_GPIO_PORT, UART_FUSION_STREAM_TX_PIN);
     HAL_GPIO_DeInit(UART_FUSION_STREAM_RX_GPIO_PORT, UART_FUSION_STREAM_RX_PIN);
     UART_FUSION_STREAM_UART_CLK_DISABLE();

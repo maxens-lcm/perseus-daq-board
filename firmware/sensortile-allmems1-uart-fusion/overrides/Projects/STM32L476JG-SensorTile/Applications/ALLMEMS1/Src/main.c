@@ -87,7 +87,7 @@
  * Through the define RANGE_TIME_WITHOUT_CONNECTED in main.h file it is possible modified this time value.
  * 
  * The example application allows the user to control the initialization phase via UART.
- * Launch a terminal application and set the UART port to 115200 bps, 8 bit, No Parity, 1 stop bit.
+ * Launch a terminal application and set the UART port to 9600 bps, 8 bit, No Parity, 1 stop bit.
  * <br>For having the same UART functionality on SensorTile board, is necessary to recompile the code uncomment the line 103
  * <br>  //#define ALLMEMS1_ENABLE_PRINTF
  * <br>on file:
@@ -177,8 +177,12 @@
 #define N_BUTTON_PRESS 3
 #define CHECK_CALIBRATION ((uint32_t)0x12345678)
 
-/* Shutdown mode enabled as default for SensorTile */
+/* Shutdown mode enabled as default for SensorTile (disabled when UART streaming is enabled) */
+#ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
+#define ENABLE_SHUT_DOWN_MODE 0
+#else
 #define ENABLE_SHUT_DOWN_MODE 1
+#endif
 
 /* Imported Variables -------------------------------------------------------------*/
 extern uint8_t set_connectable;
@@ -378,6 +382,12 @@ static volatile uint32_t Quaternion      =0;
 static uint32_t UartFusionFrameId = 0;
 static uint32_t UartFusionLastSendMs = 0;
 static uint32_t UartFusionLastFrameMs = 0;
+static uint32_t UartFusionBootTimestampMs = 0;
+static int32_t UartFusionQ0 = 1000000;
+static int32_t UartFusionQ1 = 0;
+static int32_t UartFusionQ2 = 0;
+static int32_t UartFusionQ3 = 0;
+static uint8_t UartFusionQuatValid = 0;
 #endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
 
 /* Code for MotionGR integration - Start Section */
@@ -466,6 +476,12 @@ static void ComputeMotionFA(void);
 static void ComputeQuaternions(void);
 /* Code for MotionFX integration - End Section */
 
+#ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
+static uint32_t UartFusionGetTimeBaseMs(void);
+static uint32_t UartFusionGetTimestampMs(void);
+static void SendUartFusionFrame(void);
+#endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
+
 /* Code for MotionGR integration - Start Section */
 static void ComputeMotionGR(void);
 /* Code for MotionGR integration - End Section */
@@ -503,7 +519,13 @@ int main(void)
 
   /* Configure the System clock */
   SystemClock_Config();
-  
+
+#ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
+  UART_FusionStream_Init();
+#endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
+      
+  InitTargetPlatform();
+
   /* Check if the system was resumed from shutdown mode,
      resort to RTC back-up register RTC_BKP31R to verify 
      whether or not shutdown entry flag was set by software
@@ -515,9 +537,7 @@ int main(void)
      /* out of shutdown detected */
      out_of_shutdown = 1;
   }
-      
-  InitTargetPlatform();
-  
+
 #ifdef ALLMEMS1_ENABLE_SD_CARD_LOGGING
 
   /* Configure the RTC peripheral */
@@ -534,6 +554,10 @@ int main(void)
     RTC_TimeConfig(0x00, 0x00, 0x00);
   }
 #endif /* ALLMEMS1_ENABLE_SD_CARD_LOGGING */
+
+#ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
+  UartFusionBootTimestampMs = UartFusionGetTimeBaseMs();
+#endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
   
   /* For enabling CRC clock for using motion libraries (for checking if STM32 microprocessor is used)*/
   MX_CRC_Init();
@@ -620,10 +644,6 @@ int main(void)
   /* Initialize the BlueNRG Custom services */
   Init_BlueNRG_Custom_Services();  
 
-#ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
-  UART_FusionStream_Init();
-#endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
-
   /* Check the BootLoader Compliance */
   ALLMEMS1_PRINTF("\r\n");
   if(CheckBootLoaderCompliance()) {
@@ -641,6 +661,12 @@ int main(void)
 
   /* initialize timers */
   InitTimers();
+
+#ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
+  if (HAL_TIM_OC_Start_IT(&TimCCHandle, TIM_CHANNEL_1) != HAL_OK) {
+    Error_Handler();
+  }
+#endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
   
   ActivityTimeout_StartTime = HAL_GetTick();
 
@@ -899,6 +925,10 @@ int main(void)
       ComputeMotionVC();
     }
     /* Code for MotionVC integration - End Section */
+
+#ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
+    SendUartFusionFrame();
+#endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
  
 #ifdef ALLMEMS1_ENABLE_SD_CARD_LOGGING
     if(SD_CardLogging)
@@ -949,6 +979,114 @@ void Set4GAccelerometerFullScale(void)
   sensitivity_Mul = sensitivity * ((float) FROM_MG_TO_G);
 }
 
+#ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
+static uint32_t UartFusionGetTimeBaseMs(void)
+{
+#ifdef ALLMEMS1_ENABLE_SD_CARD_LOGGING
+  RTC_TimeTypeDef time;
+  RTC_DateTypeDef date;
+  uint32_t sub_ms;
+
+  if (RtcHandle.Instance == RTC) {
+    HAL_RTC_GetTime(&RtcHandle, &time, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&RtcHandle, &date, RTC_FORMAT_BIN);
+    sub_ms = (((uint32_t)RTC_SYNCH_PREDIV - time.SubSeconds) * 1000U) /
+             ((uint32_t)RTC_SYNCH_PREDIV + 1U);
+
+    return ((uint32_t)time.Hours * 3600000U) +
+           ((uint32_t)time.Minutes * 60000U) +
+           ((uint32_t)time.Seconds * 1000U) +
+           sub_ms;
+  }
+#endif /* ALLMEMS1_ENABLE_SD_CARD_LOGGING */
+
+  return HAL_GetTick();
+}
+
+static uint32_t UartFusionGetTimestampMs(void)
+{
+  uint32_t now_ms = UartFusionGetTimeBaseMs();
+
+  if (now_ms >= UartFusionBootTimestampMs) {
+    return now_ms - UartFusionBootTimestampMs;
+  }
+
+#ifdef ALLMEMS1_ENABLE_SD_CARD_LOGGING
+  return (86400000U - UartFusionBootTimestampMs) + now_ms;
+#else
+  return now_ms - UartFusionBootTimestampMs;
+#endif /* ALLMEMS1_ENABLE_SD_CARD_LOGGING */
+}
+
+static void SendUartFusionFrame(void)
+{
+  BSP_MOTION_SENSOR_Axes_t acc = {0};
+  BSP_MOTION_SENSOR_Axes_t gyro = {0};
+  BSP_MOTION_SENSOR_Axes_t mag = {0};
+  uint32_t now_ms = UartFusionGetTimestampMs();
+  uint32_t dt_ms;
+  int32_t pressure_hpa_x100 = 0;
+  uint16_t humidity_x10 = 0;
+  int16_t temp1_c_x10 = 0;
+  int16_t temp2_c_x10 = 0;
+  int16_t temp_c_x10 = 0;
+  uint8_t status_flags = 0U;
+  uint8_t calib_status = MagnetoCalibrationDone ? 100U : 0U;
+
+  if ((now_ms - UartFusionLastSendMs) < UART_FUSION_STREAM_PERIOD_MS) {
+    return;
+  }
+
+  if ((BSP_MOTION_SENSOR_GetAxes(ACCELERO_INSTANCE, MOTION_ACCELERO, &acc) == BSP_ERROR_NONE) &&
+      (BSP_MOTION_SENSOR_GetAxes(GYRO_INSTANCE, MOTION_GYRO, &gyro) == BSP_ERROR_NONE) &&
+      (BSP_MOTION_SENSOR_GetAxes(MAGNETO_INSTANCE, MOTION_MAGNETO, &mag) == BSP_ERROR_NONE)) {
+    status_flags |= UART_FUSION_STATUS_MOTION_VALID;
+  }
+
+  ReadEnvironmentalData(&pressure_hpa_x100,
+                        &humidity_x10,
+                        &temp1_c_x10,
+                        &temp2_c_x10);
+
+  if (TargetBoardFeatures.InitPressureSensor != 0U) {
+    temp_c_x10 = temp2_c_x10;
+    status_flags |= UART_FUSION_STATUS_TEMP_VALID |
+                    UART_FUSION_STATUS_PRESSURE_VALID;
+  } else if (TargetBoardFeatures.InitHumiditySensor != 0U) {
+    temp_c_x10 = temp1_c_x10;
+    status_flags |= UART_FUSION_STATUS_TEMP_VALID;
+  }
+
+  if (UartFusionQuatValid != 0U) {
+    status_flags |= UART_FUSION_STATUS_QUAT_VALID;
+  }
+
+  if (MagnetoCalibrationDone != 0U) {
+    status_flags |= UART_FUSION_STATUS_MAG_CALIBRATED;
+  }
+
+  dt_ms = (UartFusionLastFrameMs == 0U) ? 0U : (now_ms - UartFusionLastFrameMs);
+  UartFusionLastSendMs = now_ms;
+  UartFusionLastFrameMs = now_ms;
+  UartFusionFrameId++;
+
+  UART_FusionStream_SendFrame(UartFusionFrameId,
+                              now_ms,
+                              dt_ms,
+                              UartFusionQ0,
+                              UartFusionQ1,
+                              UartFusionQ2,
+                              UartFusionQ3,
+                              acc.x, acc.y, acc.z,
+                              gyro.x, gyro.y, gyro.z,
+                              mag.x, mag.y, mag.z,
+                              temp_c_x10,
+                              pressure_hpa_x100,
+                              calib_status,
+                              status_flags);
+}
+#endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
+
 /**
   * @brief  Output Compare callback in non blocking mode 
   * @param  htim : TIM OC handle
@@ -966,9 +1104,15 @@ void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim)
     /* Set the Capture Compare Register value */
     __HAL_TIM_SET_COMPARE(&TimCCHandle, TIM_CHANNEL_1, (uhCapture + DEFAULT_uhCCR1_Val));
 
+#ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
+    if (TargetBoardFeatures.MotionFXIsInitalized != 0U) {
+      Quaternion=1;
+    }
+#else
     if ((W2ST_CHECK_CONNECTION(W2ST_CONNECT_QUAT)) | (W2ST_CHECK_CONNECTION(W2ST_CONNECT_EC))) {
       Quaternion=1;
     }
+#endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
   }
   /* Code for MotionFX integration - End Section */
 
@@ -1520,27 +1664,13 @@ static void ComputeQuaternions(void)
 
 #ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
   {
-    uint32_t now = HAL_GetTick();
+    float quat_scale = (pdata_out->quaternion[3] < 0.0f) ? -1000000.0f : 1000000.0f;
 
-    if ((now - UartFusionLastSendMs) >= UART_FUSION_STREAM_PERIOD_MS) {
-      uint32_t dt_ms = (UartFusionLastFrameMs == 0U) ? 0U : (now - UartFusionLastFrameMs);
-
-      UartFusionLastSendMs = now;
-      UartFusionLastFrameMs = now;
-      UartFusionFrameId++;
-
-      UART_FusionStream_SendFrame(UartFusionFrameId,
-                                  now,
-                                  dt_ms,
-                                  ACC_Value.x, ACC_Value.y, ACC_Value.z,
-                                  GYR_Value.x, GYR_Value.y, GYR_Value.z,
-                                  MAG_Value.x, MAG_Value.y, MAG_Value.z,
-                                  pdata_out->quaternion[3],
-                                  pdata_out->quaternion[0],
-                                  pdata_out->quaternion[1],
-                                  pdata_out->quaternion[2],
-                                  MagnetoCalibrationDone);
-    }
+    UartFusionQ0 = (int32_t)(pdata_out->quaternion[3] * quat_scale);
+    UartFusionQ1 = (int32_t)(pdata_out->quaternion[0] * quat_scale);
+    UartFusionQ2 = (int32_t)(pdata_out->quaternion[1] * quat_scale);
+    UartFusionQ3 = (int32_t)(pdata_out->quaternion[2] * quat_scale);
+    UartFusionQuatValid = 1U;
   }
 #endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
 
@@ -1570,7 +1700,13 @@ static void ComputeQuaternions(void)
       
     /* Every QUAT_UPDATE_MUL_10MS*10 mSeconds Send Quaternions informations via bluetooth */
     if(CounterFX==QUAT_UPDATE_MUL_10MS){
+#ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
+      if(W2ST_CHECK_CONNECTION(W2ST_CONNECT_QUAT)) {
+        Quat_Update(quat_axes);
+      }
+#else
       Quat_Update(quat_axes);
+#endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
       CounterFX=0;
     }
   }
@@ -2356,7 +2492,6 @@ static void Init_BlueNRG_Stack(void)
   aci_hal_read_config_data(CONFIG_DATA_RANDOM_ADDRESS, 6, &data_len_out, bdaddr);
 
   if ((bdaddr[5] & 0xC0) != 0xC0) {
-    ALLMEMS1_PRINTF("\r\nStatic Random address not well formed.\r\n");
     while(1);
   }
   
@@ -2368,14 +2503,12 @@ static void Init_BlueNRG_Stack(void)
 
   ret = aci_gatt_init();    
   if(ret){
-     ALLMEMS1_PRINTF("\r\nGATT_Init failed\r\n");
      goto fail;
   }
 
   ret = aci_gap_init_IDB05A1(GAP_PERIPHERAL_ROLE_IDB05A1, 0, 0x07, &service_handle, &dev_name_char_handle, &appearance_char_handle);
 
   if(ret != BLE_STATUS_SUCCESS){
-     ALLMEMS1_PRINTF("\r\nGAP_Init failed\r\n");
      goto fail;
   }
 
@@ -2383,7 +2516,6 @@ static void Init_BlueNRG_Stack(void)
                                    7/*strlen(BoardName)*/, (uint8_t *)BoardName);
 
   if(ret){
-     ALLMEMS1_PRINTF("\r\naci_gatt_update_char_value failed\r\n");
     while(1);
   }
 

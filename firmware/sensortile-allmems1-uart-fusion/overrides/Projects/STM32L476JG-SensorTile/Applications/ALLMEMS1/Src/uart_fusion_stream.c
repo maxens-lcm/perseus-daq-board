@@ -9,47 +9,85 @@
 
 #ifdef ALLMEMS1_ENABLE_UART_FUSION_STREAM
 
-#include <stdio.h>
-#include <string.h>
-
 UART_HandleTypeDef hUartFusionStream;
 
-static void append_float(char **cursor, size_t *remaining, float value, uint8_t precision)
+#define UART_FUSION_FRAME_HEADER_LEN 6U
+#define UART_FUSION_FRAME_CRC_LEN    2U
+#define UART_FUSION_FRAME_TOTAL_LEN  (UART_FUSION_FRAME_HEADER_LEN + \
+                                      UART_FUSION_FRAME_PAYLOAD_LEN + \
+                                      UART_FUSION_FRAME_CRC_LEN)
+
+static uint16_t crc16_ccitt(const uint8_t *data, uint16_t length)
 {
-  int32_t scale = 1;
-  int32_t whole;
-  int32_t frac;
-  int32_t scaled;
-  int written;
+  uint16_t crc = 0xFFFFU;
 
-  while (precision-- > 0U) {
-    scale *= 10;
-  }
-
-  scaled = (int32_t)(value * (float)scale);
-  if (scaled < 0) {
-    scaled = -scaled;
-    written = snprintf(*cursor, *remaining, "-");
-    if ((written > 0) && ((size_t)written < *remaining)) {
-      *cursor += written;
-      *remaining -= (size_t)written;
+  while (length-- > 0U) {
+    crc ^= (uint16_t)(*data++) << 8;
+    for (uint8_t bit = 0; bit < 8U; bit++) {
+      if ((crc & 0x8000U) != 0U) {
+        crc = (uint16_t)((crc << 1) ^ 0x1021U);
+      } else {
+        crc <<= 1;
+      }
     }
   }
 
-  whole = scaled / scale;
-  frac = scaled % scale;
-  written = snprintf(*cursor, *remaining, "%ld.%0*ld",
-                     (long)whole,
-                     (int)(scale == 1000000 ? 6 : 3),
-                     (long)frac);
-  if ((written > 0) && ((size_t)written < *remaining)) {
-    *cursor += written;
-    *remaining -= (size_t)written;
-  }
+  return crc;
+}
+
+static void put_u16_le(uint8_t *dst, uint16_t value)
+{
+  dst[0] = (uint8_t)(value & 0xFFU);
+  dst[1] = (uint8_t)((value >> 8) & 0xFFU);
+}
+
+static void put_i16_le(uint8_t *dst, int16_t value)
+{
+  put_u16_le(dst, (uint16_t)value);
+}
+
+static void put_u32_le(uint8_t *dst, uint32_t value)
+{
+  dst[0] = (uint8_t)(value & 0xFFU);
+  dst[1] = (uint8_t)((value >> 8) & 0xFFU);
+  dst[2] = (uint8_t)((value >> 16) & 0xFFU);
+  dst[3] = (uint8_t)((value >> 24) & 0xFFU);
+}
+
+static void put_i32_le(uint8_t *dst, int32_t value)
+{
+  put_u32_le(dst, (uint32_t)value);
 }
 
 void UART_FusionStream_Init(void)
 {
+  /* Enable UART clock */
+  UART_FUSION_STREAM_UART_CLK_ENABLE();
+
+  /* De-initialize PA11 and PA12 to prevent any USB CDC conflicts on these pins */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  HAL_GPIO_DeInit(GPIOA, GPIO_PIN_11 | GPIO_PIN_12);
+
+  /* Initialize UART pins */
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  GPIO_InitStruct.Pin = UART_FUSION_STREAM_TX_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = UART_FUSION_STREAM_TX_GPIO_AF;
+  UART_FUSION_STREAM_TX_GPIO_CLK_ENABLE();
+  HAL_GPIO_Init(UART_FUSION_STREAM_TX_GPIO_PORT, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = UART_FUSION_STREAM_RX_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = UART_FUSION_STREAM_RX_GPIO_AF;
+  UART_FUSION_STREAM_RX_GPIO_CLK_ENABLE();
+  HAL_GPIO_Init(UART_FUSION_STREAM_RX_GPIO_PORT, &GPIO_InitStruct);
+
+  /* Initialize UART */
   hUartFusionStream.Instance = UART_FUSION_STREAM_UART_INSTANCE;
   hUartFusionStream.Init.BaudRate = UART_FUSION_STREAM_UART_BAUDRATE;
   hUartFusionStream.Init.WordLength = UART_WORDLENGTH_8B;
@@ -58,77 +96,71 @@ void UART_FusionStream_Init(void)
   hUartFusionStream.Init.Mode = UART_MODE_TX_RX;
   hUartFusionStream.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   hUartFusionStream.Init.OverSampling = UART_OVERSAMPLING_16;
-  hUartFusionStream.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  hUartFusionStream.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  hUartFusionStream.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_SWAP_INIT;
+  hUartFusionStream.AdvancedInit.Swap = UART_ADVFEATURE_SWAP_ENABLE;
 
-  if (HAL_UART_Init(&hUartFusionStream) == HAL_OK) {
-    static const char header[] =
-      "BOOT,ALLMEMS1_UART_FUSION_STREAM\r\n"
-      "FUS,frame_id,t_ms,dt_ms,ax,ay,az,gx,gy,gz,mx,my,mz,q0,q1,q2,q3,calib\r\n";
-
-    (void)HAL_UART_Transmit(&hUartFusionStream,
-                            (uint8_t *)header,
-                            (uint16_t)(sizeof(header) - 1U),
-                            200U);
-  }
+  (void)HAL_UART_Init(&hUartFusionStream);
 }
 
 void UART_FusionStream_SendFrame(uint32_t frame_id,
                                  uint32_t t_ms,
                                  uint32_t dt_ms,
+                                 int32_t q0, int32_t q1,
+                                 int32_t q2, int32_t q3,
                                  int32_t ax, int32_t ay, int32_t az,
                                  int32_t gx, int32_t gy, int32_t gz,
                                  int32_t mx, int32_t my, int32_t mz,
-                                 float q0, float q1, float q2, float q3,
-                                 uint8_t calib_status)
+                                 int16_t temp_c_x10,
+                                 int32_t pressure_hpa_x100,
+                                 uint8_t calib_status,
+                                 uint8_t status_flags)
 {
-  char buffer[240];
-  char *cursor = buffer;
-  size_t remaining = sizeof(buffer);
-  int written;
+  static uint8_t frame[UART_FUSION_FRAME_TOTAL_LEN];
+  uint16_t pos = 0U;
+  uint16_t crc;
 
   if (hUartFusionStream.gState != HAL_UART_STATE_READY) {
     return;
   }
 
-  written = snprintf(cursor, remaining,
-                     "FUS,%lu,%lu,%lu,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,",
-                     (unsigned long)frame_id,
-                     (unsigned long)t_ms,
-                     (unsigned long)dt_ms,
-                     (long)ax, (long)ay, (long)az,
-                     (long)gx, (long)gy, (long)gz,
-                     (long)mx, (long)my, (long)mz);
-  if ((written <= 0) || ((size_t)written >= remaining)) {
-    return;
-  }
-  cursor += written;
-  remaining -= (size_t)written;
+  frame[pos++] = UART_FUSION_FRAME_SYNC0;
+  frame[pos++] = UART_FUSION_FRAME_SYNC1;
+  frame[pos++] = UART_FUSION_FRAME_VERSION;
+  frame[pos++] = UART_FUSION_FRAME_TYPE_TELEMETRY;
+  put_u16_le(&frame[pos], UART_FUSION_FRAME_PAYLOAD_LEN);
+  pos += 2U;
 
-  append_float(&cursor, &remaining, q0, 6U);
-  written = snprintf(cursor, remaining, ",");
-  if ((written <= 0) || ((size_t)written >= remaining)) { return; }
-  cursor += written; remaining -= (size_t)written;
-  append_float(&cursor, &remaining, q1, 6U);
-  written = snprintf(cursor, remaining, ",");
-  if ((written <= 0) || ((size_t)written >= remaining)) { return; }
-  cursor += written; remaining -= (size_t)written;
-  append_float(&cursor, &remaining, q2, 6U);
-  written = snprintf(cursor, remaining, ",");
-  if ((written <= 0) || ((size_t)written >= remaining)) { return; }
-  cursor += written; remaining -= (size_t)written;
-  append_float(&cursor, &remaining, q3, 6U);
+  put_u32_le(&frame[pos], frame_id); pos += 4U;
+  put_u32_le(&frame[pos], t_ms); pos += 4U;
+  put_u32_le(&frame[pos], dt_ms); pos += 4U;
+  put_i32_le(&frame[pos], q0); pos += 4U;
+  put_i32_le(&frame[pos], q1); pos += 4U;
+  put_i32_le(&frame[pos], q2); pos += 4U;
+  put_i32_le(&frame[pos], q3); pos += 4U;
+  put_i32_le(&frame[pos], ax); pos += 4U;
+  put_i32_le(&frame[pos], ay); pos += 4U;
+  put_i32_le(&frame[pos], az); pos += 4U;
+  put_i32_le(&frame[pos], gx); pos += 4U;
+  put_i32_le(&frame[pos], gy); pos += 4U;
+  put_i32_le(&frame[pos], gz); pos += 4U;
+  put_i32_le(&frame[pos], mx); pos += 4U;
+  put_i32_le(&frame[pos], my); pos += 4U;
+  put_i32_le(&frame[pos], mz); pos += 4U;
+  put_i16_le(&frame[pos], temp_c_x10); pos += 2U;
+  put_i32_le(&frame[pos], pressure_hpa_x100); pos += 4U;
+  frame[pos++] = calib_status;
+  frame[pos++] = status_flags;
 
-  written = snprintf(cursor, remaining, ",%u\r\n", calib_status);
-  if ((written <= 0) || ((size_t)written >= remaining)) {
-    return;
-  }
-  cursor += written;
+  crc = crc16_ccitt(&frame[2], (uint16_t)(pos - 2U));
+  put_u16_le(&frame[pos], crc);
+  pos += 2U;
 
-  (void)HAL_UART_Transmit(&hUartFusionStream,
-                          (uint8_t *)buffer,
-                          (uint16_t)(cursor - buffer),
-                          50U);
+  (void)HAL_UART_Transmit_IT(&hUartFusionStream, frame, pos);
+}
+
+void UART5_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&hUartFusionStream);
 }
 
 #endif /* ALLMEMS1_ENABLE_UART_FUSION_STREAM */
