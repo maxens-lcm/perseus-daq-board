@@ -151,9 +151,22 @@ void UART_FusionStream_SendFrame(uint32_t frame_id,
   frame[pos++] = calib_status;
   frame[pos++] = status_flags;
 
+  // Compute CRC for the payload (excluding sync bytes)
   crc = crc16_ccitt(&frame[2], (uint16_t)(pos - 2U));
   put_u16_le(&frame[pos], crc);
   pos += 2U;
+
+  // Safety check: ensure we have more than just the header before transmitting
+  if (pos <= UART_FUSION_FRAME_HEADER_LEN) {
+    // No payload data – nothing to send
+    return;
+  }
+
+  // Ensure UART peripheral is ready before sending
+  if (hUartFusionStream.gState != HAL_UART_STATE_READY) {
+    // UART not ready – skip transmission
+    return;
+  }
 
   (void)HAL_UART_Transmit_IT(&hUartFusionStream, frame, pos);
 }
