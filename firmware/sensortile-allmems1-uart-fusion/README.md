@@ -2,7 +2,7 @@
 
 ## 📖 Présentation du projet
 
-Ce dépôt contient le **firmware** du **PERSEUS DAQ board** basé sur le MCU **STM32L476JG** (SensorTile). L’objectif principal est de transmettre, via **UART5**, un flux binaire de télémétrie (quaternion, accéléromètre, gyroscope, magnétomètre, température, pression, …) décodable en temps réel par un script Python.
+Ce dépôt contient le **firmware** du **PERSEUS DAQ board** basé sur le MCU **STM32L476JG** (SensorTile). L’objectif principal est de transmettre, via **UART5**, un flux binaire de télémétrie (quaternion, accéléromètre, gyroscope, magnétomètre, température, pression, …) décodable en temps réel par un script Python. Le terme **DAQ** signifie *Data Acquisition* – acquisition de données en temps réel depuis les capteurs.
 
 ### Fonctionnalités clés
 - Envoi périodique d’une trame UART de **72 octets** de données utiles.

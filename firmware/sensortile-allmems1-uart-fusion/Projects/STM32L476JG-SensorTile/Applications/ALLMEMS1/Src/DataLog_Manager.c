@@ -121,21 +121,18 @@ void AudioProcess_SD_Recording(void)
   * @retval None
   */
 void openFileAudio(void)
-{  
-  while( (SD_LogAudio_Enabled != 1) &&
-         (SD_CardNotPresent != 1) )
-  {
-    if(DATALOG_SD_LogAudio_Enable())
-    {
-      SD_LogAudio_Enabled=1;
-    }
-    else
-    {
-      DATALOG_SD_LogAudio_Disable();
-      //DATALOG_SD_Log_Disable();
-      DATALOG_SD_DeInit();
-      DATALOG_SD_Init();
-    }
+{
+  /* Return immediately if logging already enabled or card not present */
+  if (SD_LogAudio_Enabled == 1 || SD_CardNotPresent == 1) {
+    return;
+  }
+
+  if (DATALOG_SD_LogAudio_Enable()) {
+    SD_LogAudio_Enabled = 1;
+  } else {
+    DATALOG_SD_LogAudio_Disable();
+    DATALOG_SD_DeInit();
+    DATALOG_SD_Init();
     HAL_Delay(100);
   }
 }
@@ -255,20 +252,18 @@ void SD_CardLoggingMemsData(void)
   * @retval None
   */
 void openFile(uint8_t AccessControl)
-{  
-  while( (SD_Log_Enabled != 1) &&
-         (SD_CardNotPresent != 1) )
-  {
-    if(DATALOG_SD_Log_Enable(AccessControl))
-    {
-      SD_Log_Enabled=1;
-    }
-    else
-    {
-      DATALOG_SD_Log_Disable();
-      DATALOG_SD_DeInit();
-      DATALOG_SD_Init();
-    }
+{
+  /* Return if already logging or no card */
+  if (SD_Log_Enabled == 1 || SD_CardNotPresent == 1) {
+    return;
+  }
+
+  if (DATALOG_SD_Log_Enable(AccessControl)) {
+    SD_Log_Enabled = 1;
+  } else {
+    DATALOG_SD_Log_Disable();
+    DATALOG_SD_DeInit();
+    DATALOG_SD_Init();
     HAL_Delay(100);
   }
 }
