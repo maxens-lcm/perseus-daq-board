@@ -110,6 +110,48 @@ Calib status: 0x1F, flags: 0x00
 
 ---
 
+## 📡 Format brut de la trame UART (RS422)
+
+Le MCU transmet les données sur le port **UART5 (RS422)**. Chaque trame possède la structure suivante (en **little‑endian**) :
+
+- **Header (6 octets)**
+  - Octet 0‑1 : `0xA5 0x5A` – séquence de synchronisation.
+  - Octet 2    : version (`0x01`).
+  - Octet 3    : type (`0x01` – télémétrie).
+  - Octet 4‑5 : longueur du payload (`0x48` = 72 octets).
+
+- **Payload (72 octets)**
+
+| Octets | Taille | Type | Champ | Description |
+|--------|--------|------|-------|-------------|
+| 0‑3    | 4 | `uint32_t` | `frame_id` | Identifiant séquentiel du trame. |
+| 4‑7    | 4 | `uint32_t` | `t_ms` | Horodatage en millisecondes depuis le démarrage. |
+| 8‑11   | 4 | `uint32_t` | `dt_ms` | Δt depuis la trame précédente. |
+| 12‑15  | 4 | `int32_t`  | `q0` | Quaternion w × 10000. |
+| 16‑19  | 4 | `int32_t`  | `q1` | Quaternion x × 10000. |
+| 20‑23  | 4 | `int32_t`  | `q2` | Quaternion y × 10000. |
+| 24‑27  | 4 | `int32_t`  | `q3` | Quaternion z × 10000. |
+| 28‑31  | 4 | `int32_t`  | `ax` | Accélération X en **mg** (1 mg = 0.001 g). |
+| 32‑35  | 4 | `int32_t`  | `ay` | Accélération Y en mg. |
+| 36‑39  | 4 | `int32_t`  | `az` | Accélération Z en mg. |
+| 40‑43  | 4 | `int32_t`  | `gx` | Gyro X en **mdps** (milli‑deg/s). |
+| 44‑47  | 4 | `int32_t`  | `gy` | Gyro Y en mdps. |
+| 48‑51  | 4 | `int32_t`  | `gz` | Gyro Z en mdps. |
+| 52‑55  | 4 | `int32_t`  | `mx` | Champ magnétique X en **mgauss**. |
+| 56‑59  | 4 | `int32_t`  | `my` | Champ magnétique Y en mgauss. |
+| 60‑63  | 4 | `int32_t`  | `mz` | Champ magnétique Z en mgauss. |
+| 64‑65  | 2 | `int16_t`  | `temp_c_x10` | Température × 10 (°C). |
+| 66‑69  | 4 | `int32_t`  | `pressure_hpa_x100` | Pression × 100 (hPa). |
+| 70     | 1 | `uint8_t`  | `calib_status` | Statut de calibration du capteur. |
+| 71     | 1 | `uint8_t`  | `status_flags` | Flags divers (ex. 0x0F = données valides). |
+
+- **CRC (2 octets)**
+  - Calculé sur le header (à partir du byte 2) + payload, avec le polynôme `0x1021` et le seed `0xFFFF` (CRC‑16‑CCITT).
+
+Cette structure occupe **80 octets** au total : 6 octets d’en‑tête, 72 octets de payload et 2 octets de CRC. Le protocole RS422 assure une transmission fiable sur de longues distances avec blindage.
+
+---
+
 ## 📄 Licence
 Ce projet est publié sous la licence **BSD‑3‑Clause**. Voir le fichier `LICENSE` pour les détails.
 
