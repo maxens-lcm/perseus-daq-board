@@ -3,6 +3,16 @@
 *.bak
 *~
 
+# Local IDE/workspace state
+cubeide_workspace/
+cubeide_workspace_diagnostic/
+**/.cubeide-workspace/
+**/.cubeide-workspace-review/
+**/.metadata/
+/firmware/.project
+/firmware/sensortile-allmems1-uart-fusion/.project
+/firmware/sensortile-allmems1-uart-fusion/overrides/.project
+
 # Firmware build outputs
 **/Debug/
 **/Release/
