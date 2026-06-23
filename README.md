@@ -1,5 +1,5 @@
 # PERSEUS DAQ Board
-<table><tr><td align="center"><img src="hardware/images/daq_front.jpeg" alt="Front view" width="45%"></td><td align="center"><img src="hardware/images/daq_back.jpeg" alt="Back view" width="45%"></td></tr></table>
+<div style="display:flex; width:100%;"><img src="hardware/images/daq_front.jpeg" alt="Front view" style="width:50%;margin:0;"/><img src="hardware/images/daq_back.jpeg" alt="Back view" style="width:50%;margin:0;"/></div>
 
 Carte electronique d'acquisition de donnees pour le programme fusees etudiantes PERSEUS du CNES.
 
