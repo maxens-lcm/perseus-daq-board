@@ -64,7 +64,7 @@ the constant WakeupSource in the file main.c (The Double Tap event is set as def
 Through the define RANGE_TIME_WITHOUT_CONNECTED in main.h file it is possible modified this time value.
 
 The example application allows the user to control the initialization phase via UART.
-Launch a terminal application and set the UART port to 9600 bps, 8 bit, No Parity, 1 stop bit.
+Launch a terminal application and set the UART port to 115200 bps, 8 bit, No Parity, 1 stop bit.
 
 For having the same UART functionality on SensorTile board, is necessary to recompile the code uncomment the line
   //#define ALLMEMS1_ENABLE_PRINTF

@@ -69,12 +69,12 @@ Remplacez `<PORT>` par le nom du port trouvé précédemment, `<BAUD>` par la vi
 # macOS / Linux (exemple avec le chemin pyenv)
 /Users/maxenslecam/.pyenv/versions/3.10.13/bin/python \
     /Users/maxenslecam/Documents/perseus-daq-board/firmware/sensortile-allmems1-uart-fusion/scripts/uart_fusion_decoder.py \
-    --port /dev/cu.usbserial-FT82BWWY --baud 9600 --output decoded.csv
+    --port /dev/cu.usbserial-FT82BWWY --baud 115200 --output decoded.csv
 
 # Windows (exemple)
 C:\Users\maxenslecam\.pyenv\pyenv-win\versions\3.10.13\python.exe ^
     C:\Users\maxenslecam\Documents\perseus-daq-board\firmware\sensortile-allmems1-uart-fusion\scripts\uart_fusion_decoder.py ^
-    --port COM3 --baud 9600 --output decoded.csv
+    --port COM3 --baud 115200 --output decoded.csv
 ```
 
 ## Script de lancement rapide
