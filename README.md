@@ -71,11 +71,7 @@ Voir [firmware/sensortile-allmems1-uart-fusion/README.md](firmware/sensortile-al
 
 ## Synoptique
 
-Le synoptique principal est disponible ici :
-
-```text
-docs/synoptique_perseus_daq_board.drawio
-```
+![Synoptique PERSEUS DAQ Board](docs/synoptique_perseus.png)
 
 ## Nom du repo
 
